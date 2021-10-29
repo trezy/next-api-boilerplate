@@ -1,4 +1,5 @@
 // Module imports
+import compose from 'koa-compose'
 import cors from 'micro-cors'
 
 
@@ -12,17 +13,18 @@ import httpStatus from 'helpers/httpStatus'
 
 
 
-
 // Local constants
-const DEFAULT_MIDDLEWARES = [cors({
-	origin: (() => {
-		if (process.env.VERCEL_ENV === 'production') {
-			return process.env.FULLY_QUALIFIED_DOMAIN_NAME
-		}
+const DEFAULT_MIDDLEWARES = [
+	cors({
+		origin: (() => {
+			if (process.env.VERCEL_ENV === 'production') {
+				return process.env.FULLY_QUALIFIED_DOMAIN_NAME
+			}
 
-		return '*'
-	})(),
-})]
+			return '*'
+		})(),
+	}),
+]
 
 
 
@@ -30,7 +32,7 @@ const DEFAULT_MIDDLEWARES = [cors({
 
 function createEndpoint(options) {
 	const {
-		handler: initialHandler,
+		handler,
 		allowedMethods,
 		middlewares = [],
 	} = options
@@ -40,17 +42,23 @@ function createEndpoint(options) {
 		...middlewares,
 	]
 
-	const wrappedHandler = allMiddlewares.reduce(
-		(handler, middleware) => middleware(handler),
-		initialHandler,
-	)
-
-	return (req, res) => {
-		if (allowedMethods && !allowedMethods.includes(req.method.toLowerCase())) {
-			return res.status(httpStatus.METHOD_NOT_ALLOWED).end()
+	return async (request, response) => {
+		if (allowedMethods && !allowedMethods.includes(request.method.toLowerCase())) {
+			return response.status(httpStatus.METHOD_NOT_ALLOWED).end()
 		}
 
-		return wrappedHandler(req, res)
+		let middlewareIndex = 0
+		let wrappedHandler = handler
+
+		while (middlewareIndex < allMiddlewares.length) {
+			const currentMiddleware = allMiddlewares[middlewareIndex]
+
+			wrappedHandler = await currentMiddleware(wrappedHandler)
+
+			middlewareIndex += 1
+		}
+
+		return wrappedHandler(request, response)
 	}
 }
 
